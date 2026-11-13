@@ -1,0 +1,58 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.FouadHELLAL7/inky-mcp",
+  "title": "INKY",
+  "description": "Read-only MCP server for the INKY email security External API: messages, threat statistics, reported mail, allow/block lists.",
+  "repository": {
+    "url": "https://github.com/FouadHELLAL7/inky-mcp",
+    "source": "github"
+  },
+  "version": "1.0.0",
+  "websiteUrl": "https://github.com/FouadHELLAL7/inky-mcp",
+  "packages": [
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/fouadhellal7/inky-mcp:1.0.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "INKY_API_KEY",
+          "description": "Console-issued INKY API key (X-API-Key)",
+          "isRequired": true,
+          "isSecret": true,
+          "format": "string"
+        },
+        {
+          "name": "INKY_REGION",
+          "description": "INKY region: eu or us",
+          "isRequired": true,
+          "default": "us",
+          "format": "string"
+        },
+        {
+          "name": "MCP_TRANSPORT",
+          "description": "stdio for local use; the image defaults to http for gateway hosting",
+          "isRequired": false,
+          "default": "stdio",
+          "format": "string"
+        },
+        {
+          "name": "AUTH_MODE",
+          "description": "HTTP only: env reads INKY_API_KEY, gateway expects X-Inky-Api-Key / X-Inky-Region headers per request",
+          "isRequired": false,
+          "default": "env",
+          "format": "string"
+        },
+        {
+          "name": "LOG_LEVEL",
+          "description": "debug, info, warn or error",
+          "isRequired": false,
+          "default": "info",
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}

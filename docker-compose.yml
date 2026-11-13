@@ -1,0 +1,38 @@
+services:
+  # Gateway mode. The INKY API key arrives per request on X-Inky-Api-Key
+  # (and the region on X-Inky-Region). Do NOT add INKY_API_KEY or env_file to
+  # this service: that would put a static vendor credential in the container.
+  # The project .env is used only to interpolate CONDUIT_S2S_SECRET.
+  inky-mcp:
+    build:
+      context: .
+      target: production
+    image: inky-mcp:latest
+    container_name: inky-mcp
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - MCP_TRANSPORT=http
+      - MCP_HTTP_PORT=8080
+      - MCP_HTTP_HOST=0.0.0.0
+      - AUTH_MODE=gateway
+      # Default region when a request has no X-Inky-Region header (eu | us).
+      - INKY_REGION=${INKY_REGION:-us}
+      - CONDUIT_S2S_SECRET=${CONDUIT_S2S_SECRET:?set CONDUIT_S2S_SECRET}
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M

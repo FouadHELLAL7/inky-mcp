@@ -11,7 +11,7 @@ Last updated: 2026-11-13 (session 1)
 | M1 Project scaffolding (package.json, tsconfig, eslint, vitest) | done |
 | M2 API client, config, credentials, HTTP/stdio transports | done |
 | M3 Read-only tools (24) + mocked tests (96 passing) | done |
-| M4 Docker, CI, MCP client smoke verification | pending |
+| M4 Docker, CI, MCP client smoke verification | local smoke passed (stdio + HTTP, SDK client + MCP Inspector CLI); Docker verified only in CI |
 | M5 README, packaging metadata, final push | pending |
 
 ## Decisions

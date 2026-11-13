@@ -1,0 +1,55 @@
+{
+  "manifest_version": "0.3",
+  "name": "inky-mcp",
+  "version": "1.0.0",
+  "display_name": "INKY MCP Server",
+  "description": "Read-only MCP server for the INKY email security External API: teams, usage, message search, threat statistics, reported mail, allow/block lists, VIPs and admins.",
+  "long_description": "Gives AI assistants read-only access to an INKY estate for everyday MSP email-security investigations: find a customer's team, search the analysis records of inbound mail by recipient, sender or Message-ID, summarise threat trends, review the reported-mail queue, and audit allow/block lists, VIPs and console admins. Uses the INKY External API with a console-issued API key in the EU or US region.",
+  "author": {
+    "name": "FouadHELLAL7",
+    "url": "https://github.com/FouadHELLAL7"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/FouadHELLAL7/inky-mcp"
+  },
+  "homepage": "https://github.com/FouadHELLAL7/inky-mcp",
+  "license": "Apache-2.0",
+  "keywords": ["inky", "email-security", "phishing", "msp", "security"],
+  "server": {
+    "type": "node",
+    "entry_point": "dist/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/dist/index.js"],
+      "env": {
+        "INKY_API_KEY": "${user_config.inky_api_key}",
+        "INKY_REGION": "${user_config.inky_region}",
+        "MCP_TRANSPORT": "stdio"
+      }
+    }
+  },
+  "tools_generated": true,
+  "user_config": {
+    "inky_api_key": {
+      "type": "string",
+      "title": "INKY API key",
+      "description": "Console-issued INKY API key (Settings -> API Keys), starting with inky_ext_.",
+      "required": true,
+      "sensitive": true
+    },
+    "inky_region": {
+      "type": "string",
+      "title": "INKY region",
+      "description": "eu (api.eu.inkyphishfence.com) or us (api.inkyphishfence.com). A key only works in its own region.",
+      "required": true,
+      "default": "eu"
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": {
+      "node": ">=22.0.0"
+    }
+  }
+}

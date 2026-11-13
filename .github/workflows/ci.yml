@@ -1,0 +1,57 @@
+name: CI
+
+# Lint, type-check, test, build and smoke-test the server, then build the
+# Docker image and run the same MCP smoke test against the container (stdio
+# and Streamable HTTP). Nothing is published from this workflow.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [22.x, 24.x]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: MCP smoke test (stdio + HTTP, mocked INKY API)
+        run: npm run smoke
+
+  docker:
+    name: Docker build and container smoke test
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+      - run: npm ci
+      - name: Build image
+        run: docker build --build-arg COMMIT_SHA=${{ github.sha }} -t inky-mcp:ci .
+      - name: Container smoke test (stdio + HTTP)
+        run: node scripts/smoke-mcp.mjs --docker inky-mcp:ci
+      - name: Container refuses to start HTTP without CONDUIT_S2S_SECRET
+        run: |
+          if docker run --rm inky-mcp:ci; then
+            echo "expected startup failure"; exit 1
+          fi
