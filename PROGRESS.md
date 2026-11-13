@@ -9,8 +9,8 @@ Last updated: 2026-11-13 (session 1)
 | M1 Reference study (`docs/REFERENCE_NOTES.md`) | done |
 | M1 INKY API study from authenticated docs (`docs/API_NOTES.md`) | done |
 | M1 Project scaffolding (package.json, tsconfig, eslint, vitest) | done |
-| M2 API client, config, credentials, HTTP/stdio transports | in progress |
-| M3 Read-only tools + mocked tests | pending |
+| M2 API client, config, credentials, HTTP/stdio transports | done |
+| M3 Read-only tools (24) + mocked tests (96 passing) | done |
 | M4 Docker, CI, MCP client smoke verification | pending |
 | M5 README, packaging metadata, final push | pending |
 
@@ -29,4 +29,4 @@ Last updated: 2026-11-13 (session 1)
 
 ## Next step
 
-Implement `src/` (config, client, tools, transports) and tests.
+Add scripts (smoke test, spec fetch, mcpb pack), Dockerfile, compose, CI, README, packaging metadata.
