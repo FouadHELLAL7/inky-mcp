@@ -1,0 +1,16 @@
+node_modules
+dist
+coverage
+openapi
+.git
+.github
+.env
+.env.*
+!.env.example
+*.log
+logs
+docs
+test
+*.md
+.mcpb-staging
+*.mcpb

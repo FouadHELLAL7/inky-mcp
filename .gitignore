@@ -1,0 +1,16 @@
+node_modules/
+dist/
+coverage/
+openapi/
+.env
+.env.*
+!.env.example
+*.log
+npm-debug.log*
+logs/
+.DS_Store
+.vscode/
+.idea/
+*.tgz
+*.mcpb
+.mcpb-staging/
