@@ -19,7 +19,11 @@ services:
       - AUTH_MODE=gateway
       # Default region when a request has no X-Inky-Region header (eu | us).
       - INKY_REGION=${INKY_REGION:-us}
-      - CONDUIT_S2S_SECRET=${CONDUIT_S2S_SECRET:?set CONDUIT_S2S_SECRET}
+      # Gateway authentication: set at least one (the server refuses to start otherwise).
+      # CONDUIT_S2S_SECRET: WYRE conduit gateway (signed X-Gateway-S2S header).
+      # MCP_BEARER_TOKEN: gateways that send a static "Authorization: Bearer <token>" header.
+      - CONDUIT_S2S_SECRET=${CONDUIT_S2S_SECRET:-}
+      - MCP_BEARER_TOKEN=${MCP_BEARER_TOKEN:-}
     ports:
       - "127.0.0.1:8080:8080"
     healthcheck:

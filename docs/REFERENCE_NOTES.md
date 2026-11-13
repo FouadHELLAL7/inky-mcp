@@ -64,6 +64,8 @@ Package scripts (common subset): `build`, `dev`, `start`, `test` (`vitest run`),
 
 **Chosen:** ported unchanged (`src/s2s-verify.ts`), so the server drops into the same gateway.
 
+**Addition (deviation):** `MCP_BEARER_TOKEN`, a static `Authorization: Bearer` check (constant-time, ≥ 24 characters, placeholders refused), accepted as an alternative to S2S. Reason: the target MCP gateway (v0.20.2, inspected read-only on 2026-11-13) attaches upstreams by URL plus static headers with secret references and does not sign `X-Gateway-S2S`; a time-stamped HMAC cannot be expressed as a static header. Startup still fails closed when neither secret is set.
+
 ## 4. Credentials and `AUTH_MODE`
 
 - stdio always reads vendor env vars (`HUNTRESS_API_KEY`, `ITGLUE_API_KEY`, …).

@@ -7,13 +7,15 @@
  *   server, so a long-lived session can never serve a later caller.
  * - GET /health and /healthz: unauthenticated liveness; never reads credentials
  *   and exposes no tenant or secret data.
- * - Startup fails closed without a real CONDUIT_S2S_SECRET unless
- *   MCP_ALLOW_INSECURE_DEV=1 (then loopback bind only). Every /mcp request must
- *   carry a valid X-Gateway-S2S header when a secret is configured.
+ * - Startup fails closed without a real CONDUIT_S2S_SECRET (WYRE conduit,
+ *   X-Gateway-S2S HMAC) or MCP_BEARER_TOKEN (static Authorization: Bearer,
+ *   for gateways that send fixed headers), unless MCP_ALLOW_INSECURE_DEV=1
+ *   (then loopback bind only). Every /mcp request must pass one configured check.
  * - AUTH_MODE=gateway: X-Inky-Api-Key (+ optional X-Inky-Region) per request,
  *   no fallback to INKY_API_KEY from the environment.
  */
 
+import { createHash, timingSafeEqual } from "node:crypto";
 import { createServer as createHttpServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import type { ServerConfig } from "./config.js";
@@ -56,18 +58,55 @@ export function isLoopbackHost(host: string): boolean {
   return parts.length === 4 && parts.every((p) => /^\d{1,3}$/.test(p) && Number(p) <= 255) && parts[0] === "127";
 }
 
-export function resolveS2sSecret(env: NodeJS.ProcessEnv): { secret: string; insecureDev: boolean } {
-  const raw = (env.CONDUIT_S2S_SECRET ?? "").trim();
-  if (raw && KNOWN_PLACEHOLDER_SECRETS.has(raw.toLowerCase())) {
+export interface HttpAuth {
+  /** WYRE conduit S2S HMAC secret (X-Gateway-S2S). */
+  s2sSecret: string;
+  /** Static bearer token (Authorization: Bearer …) for gateways that send fixed headers. */
+  bearerToken: string;
+  insecureDev: boolean;
+}
+
+const MIN_BEARER_LENGTH = 24;
+
+/**
+ * HTTP startup fails closed: at least one of CONDUIT_S2S_SECRET or
+ * MCP_BEARER_TOKEN must be a real value, unless MCP_ALLOW_INSECURE_DEV=1
+ * (loopback only). Placeholders are always refused. Values are never logged.
+ */
+export function resolveHttpAuth(env: NodeJS.ProcessEnv): HttpAuth {
+  const s2sSecret = (env.CONDUIT_S2S_SECRET ?? "").trim();
+  const bearerToken = (env.MCP_BEARER_TOKEN ?? "").trim();
+  if (s2sSecret && KNOWN_PLACEHOLDER_SECRETS.has(s2sSecret.toLowerCase())) {
+    throw new StartupError("Refusing to start HTTP transport: CONDUIT_S2S_SECRET is a known placeholder. Generate one with `openssl rand -hex 32`.");
+  }
+  if (bearerToken && (KNOWN_PLACEHOLDER_SECRETS.has(bearerToken.toLowerCase()) || bearerToken.length < MIN_BEARER_LENGTH)) {
     throw new StartupError(
-      "Refusing to start HTTP transport: CONDUIT_S2S_SECRET is a known placeholder. Generate one with `openssl rand -hex 32`.",
+      `Refusing to start HTTP transport: MCP_BEARER_TOKEN must be a random value of at least ${MIN_BEARER_LENGTH} characters (e.g. \`openssl rand -hex 32\`).`,
     );
   }
-  if (raw) return { secret: raw, insecureDev: false };
-  if (env.MCP_ALLOW_INSECURE_DEV === "1") return { secret: "", insecureDev: true };
+  if (s2sSecret || bearerToken) return { s2sSecret, bearerToken, insecureDev: false };
+  if (env.MCP_ALLOW_INSECURE_DEV === "1") return { s2sSecret: "", bearerToken: "", insecureDev: true };
   throw new StartupError(
-    "Refusing to start HTTP transport: CONDUIT_S2S_SECRET is empty. Set it to the gateway-provisioned secret, or set MCP_ALLOW_INSECURE_DEV=1 for local development only.",
+    "Refusing to start HTTP transport: set CONDUIT_S2S_SECRET (WYRE conduit gateway, X-Gateway-S2S) and/or MCP_BEARER_TOKEN (gateways that send a static Authorization: Bearer header), or MCP_ALLOW_INSECURE_DEV=1 for local development only.",
   );
+}
+
+/** Backwards-compatible helper used by tests: S2S secret resolution only. */
+export function resolveS2sSecret(env: NodeJS.ProcessEnv): { secret: string; insecureDev: boolean } {
+  const auth = resolveHttpAuth({ ...env, MCP_BEARER_TOKEN: undefined });
+  return { secret: auth.s2sSecret, insecureDev: auth.insecureDev };
+}
+
+function digest(value: string): Buffer {
+  return createHash("sha256").update(value, "utf8").digest();
+}
+
+/** Constant-time check of an "Authorization: Bearer <token>" header. */
+export function verifyBearer(header: string | undefined, token: string): boolean {
+  if (!token || !header) return false;
+  const match = /^Bearer\s+(\S+)$/i.exec(header.trim());
+  if (!match) return false;
+  return timingSafeEqual(digest(match[1]), digest(token));
 }
 
 export function resolveBindHost(insecureDev: boolean, env: NodeJS.ProcessEnv): string {
@@ -75,7 +114,7 @@ export function resolveBindHost(insecureDev: boolean, env: NodeJS.ProcessEnv): s
   if (!insecureDev) return configured || LOOPBACK_HOST;
   if (configured === "" || isLoopbackHost(configured)) return LOOPBACK_HOST;
   throw new StartupError(
-    `Refusing to start HTTP transport: MCP_ALLOW_INSECURE_DEV=1 without CONDUIT_S2S_SECRET only listens on ${LOOPBACK_HOST}; MCP_HTTP_HOST=${configured} is not loopback.`,
+    `Refusing to start HTTP transport: MCP_ALLOW_INSECURE_DEV=1 without CONDUIT_S2S_SECRET or MCP_BEARER_TOKEN only listens on ${LOOPBACK_HOST}; MCP_HTTP_HOST=${configured} is not loopback.`,
   );
 }
 
@@ -124,13 +163,17 @@ function headerValue(value: string | string[] | undefined): string | undefined {
 export async function startHttpServer(options: HttpOptions): Promise<HttpServer> {
   const env = options.env ?? process.env;
   const { config, clientDeps } = options;
-  const { secret, insecureDev } = resolveS2sSecret(env);
+  const { s2sSecret, bearerToken, insecureDev } = resolveHttpAuth(env);
   const host = resolveBindHost(insecureDev, env);
   const port = resolvePort(env);
   const gatewayMode = (env.AUTH_MODE ?? "env").trim().toLowerCase() === "gateway";
   if (insecureDev) {
-    logger.error("SECURITY WARNING: CONDUIT_S2S_SECRET is empty and MCP_ALLOW_INSECURE_DEV=1. /mcp does not check X-Gateway-S2S and listens on 127.0.0.1 only. Local development only.");
+    logger.error("SECURITY WARNING: no CONDUIT_S2S_SECRET or MCP_BEARER_TOKEN and MCP_ALLOW_INSECURE_DEV=1. /mcp is unauthenticated and listens on 127.0.0.1 only. Local development only.");
   }
+  const callerAuthRequired = Boolean(s2sSecret || bearerToken);
+  const callerAuthorized = (req: IncomingMessage): boolean =>
+    (Boolean(s2sSecret) && verifyS2sHeader(headerValue(req.headers[S2S_HEADER]), s2sSecret)) ||
+    (Boolean(bearerToken) && verifyBearer(headerValue(req.headers.authorization), bearerToken));
   const envResolver: CredentialResolver = envCredentialResolver(config, env);
 
   const httpServer = createHttpServer(async (req, res) => {
@@ -153,9 +196,11 @@ export async function startHttpServer(options: HttpOptions): Promise<HttpServer>
       return;
     }
 
-    // S2S is enforced before anything else, including credential extraction.
-    if (secret && !verifyS2sHeader(headerValue(req.headers[S2S_HEADER]), secret)) {
-      sendJson(res, 401, { error: "Missing or invalid X-Gateway-S2S header: this endpoint only accepts requests signed by the gateway." });
+    // Caller (gateway) authentication is enforced before anything else,
+    // including credential extraction.
+    if (callerAuthRequired && !callerAuthorized(req)) {
+      const accepted = [s2sSecret ? "X-Gateway-S2S" : "", bearerToken ? "Authorization: Bearer" : ""].filter(Boolean).join(" or ");
+      sendJson(res, 401, { error: `Missing or invalid gateway authentication: this endpoint requires ${accepted}.` });
       return;
     }
 

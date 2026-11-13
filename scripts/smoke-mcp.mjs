@@ -27,6 +27,7 @@ const EXPECTED_TOOLS = 24;
 const STDIO_KEY = "inky_ext_SMOKESTDIO0000000000000000000000aaaaaa";
 const HTTP_KEY = "inky_ext_SMOKEHTTP00000000000000000000000bbbbbb";
 const S2S_SECRET = randomBytes(32).toString("hex");
+const BEARER = randomBytes(32).toString("hex");
 
 const seenKeys = [];
 let failures = 0;
@@ -123,7 +124,7 @@ async function main() {
   // ---- Streamable HTTP, gateway mode ----
   console.log("Streamable HTTP transport (AUTH_MODE=gateway)");
   const port = await freePort();
-  const httpEnv = { MCP_TRANSPORT: "http", MCP_HTTP_PORT: String(port), MCP_HTTP_HOST: "127.0.0.1", AUTH_MODE: "gateway", CONDUIT_S2S_SECRET: S2S_SECRET, INKY_TEST_BASE_URL: mockUrl, LOG_LEVEL: "warn" };
+  const httpEnv = { MCP_TRANSPORT: "http", MCP_HTTP_PORT: String(port), MCP_HTTP_HOST: "127.0.0.1", AUTH_MODE: "gateway", CONDUIT_S2S_SECRET: S2S_SECRET, MCP_BEARER_TOKEN: BEARER, INKY_TEST_BASE_URL: mockUrl, LOG_LEVEL: "warn" };
   const http = serverCommand(httpEnv, { detached: Boolean(dockerImage) });
   const child = spawn(http.command, http.args, { env: http.env, stdio: ["ignore", dockerImage ? "pipe" : "inherit", "inherit"] });
   let containerId = "";
@@ -160,6 +161,18 @@ async function main() {
     await exercise(httpClient, "http");
     await httpClient.close();
     check("http: upstream calls carried the gateway header key", seenKeys.length > 0 && seenKeys.every((k) => k === HTTP_KEY));
+
+    const wrongBearer = await fetch(`${base}/mcp`, { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer wrong", "x-inky-api-key": HTTP_KEY }, body: "{}" });
+    check("http: wrong bearer token is 401", wrongBearer.status === 401);
+    const bearerClient = new Client({ name: "inky-smoke-bearer", version: "1.0.0" });
+    await bearerClient.connect(
+      new StreamableHTTPClientTransport(new URL(`${base}/mcp`), {
+        requestInit: { headers: { authorization: `Bearer ${BEARER}`, "x-inky-api-key": HTTP_KEY, "x-inky-region": "eu" } },
+      }),
+    );
+    const viaBearer = await bearerClient.callTool({ name: "inky_teams_list", arguments: {} });
+    check("http: static bearer token gateway auth works", !viaBearer.isError && (viaBearer.content?.[0]?.text ?? "").includes("smoke-team"));
+    await bearerClient.close();
   }
 
   if (dockerImage) {

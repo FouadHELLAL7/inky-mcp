@@ -4,7 +4,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { loadConfig } from "../src/config.js";
-import { StartupError, resolveBindHost, resolveS2sSecret, startHttpServer } from "../src/http.js";
+import { StartupError, resolveBindHost, resolveHttpAuth, resolveS2sSecret, startHttpServer, verifyBearer } from "../src/http.js";
 import { signS2sHeader, verifyS2sHeader } from "../src/s2s-verify.js";
 import { json, mockFetch } from "./helpers.js";
 
@@ -117,6 +117,34 @@ describe("HTTP endpoints", () => {
     expect(result.isError).toBeFalsy();
     expect(requests[0].url.origin).toBe("https://api.eu.inkyphishfence.com");
     expect(requests[0].headers["x-api-key"]).toBe(KEY_A);
+    await client.close();
+  });
+});
+
+describe("static bearer token gateway auth", () => {
+  const TOKEN = "b".repeat(16) + "0123456789abcdef";
+
+  it("validates MCP_BEARER_TOKEN at startup", () => {
+    expect(() => resolveHttpAuth({ MCP_BEARER_TOKEN: "short" })).toThrow(StartupError);
+    expect(() => resolveHttpAuth({ MCP_BEARER_TOKEN: "changeme" })).toThrow(StartupError);
+    expect(resolveHttpAuth({ MCP_BEARER_TOKEN: TOKEN })).toMatchObject({ bearerToken: TOKEN, s2sSecret: "", insecureDev: false });
+    expect(verifyBearer(`Bearer ${TOKEN}`, TOKEN)).toBe(true);
+    expect(verifyBearer(`bearer ${TOKEN}`, TOKEN)).toBe(true);
+    expect(verifyBearer(`Bearer ${TOKEN}x`, TOKEN)).toBe(false);
+    expect(verifyBearer(TOKEN, TOKEN)).toBe(false);
+  });
+
+  it("accepts Authorization: Bearer with gateway credential headers and rejects a wrong token", async () => {
+    const { base, requests } = await start({ CONDUIT_S2S_SECRET: "", MCP_BEARER_TOKEN: TOKEN, AUTH_MODE: "gateway" }, () => json({ teams: [], pagination: { next_cursor: null, limit: 50 } }));
+    const wrong = await fetch(`${base}/mcp`, { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer nope", "x-inky-api-key": KEY_A }, body: "{}" });
+    expect(wrong.status).toBe(401);
+    const s2sOnly = await fetch(`${base}/mcp`, { method: "POST", headers: { "content-type": "application/json", "x-gateway-s2s": signS2sHeader(SECRET), "x-inky-api-key": KEY_A }, body: "{}" });
+    expect(s2sOnly.status).toBe(401);
+    const client = await mcpClient(base, { authorization: `Bearer ${TOKEN}`, "x-inky-api-key": KEY_A, "x-inky-region": "eu" });
+    const result = await client.callTool({ name: "inky_teams_list", arguments: {} });
+    expect(result.isError).toBeFalsy();
+    expect(requests[0].headers["x-api-key"]).toBe(KEY_A);
+    expect(requests[0].headers.authorization).toBeUndefined();
     await client.close();
   });
 });
